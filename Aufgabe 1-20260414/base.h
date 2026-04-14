@@ -48,10 +48,12 @@ void urks(void);
 // Gibt das Maximum von zwei Werten zurück
 #define max(a,b)  ((a) LT (b)) ? (b) : (a)
 #endif
+
 #ifndef min
 // Gibt das Minimum von zwei Werten zurück
 #define min(a,b)  ((a) GT (b)) ? (b) : (a)
 #endif
+
 #ifndef between
 // Prüft ob 'b' zwischen 'a' und 'c' liegt (inklusive)
 #define between(a,b,c)  ((a) LE (b)) AND ((b) LE (c))
