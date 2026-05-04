@@ -31,20 +31,23 @@
 
 typedef enum { S0, S1 } TState;
 
-// --- Variable pro Button (RAM, ändert sich) ---
-LOCAL struct { Int cnt; TState state; } var1, var2, var3, var4, var5, var6;
-
-// --- Konstante pro Button (FRAM, fest) ---
-LOCAL const struct {
+// --- Struct-Typ für Button-Konfiguration ---
+typedef struct {
    const UChar * const port;
    const UChar         mask;
    const TEvent        msg;
-} btn1 = { (UChar *)(&P1IN), BIT0, EVENT_BTN1 },
-  btn2 = { (UChar *)(&P1IN), BIT1, EVENT_BTN2 },
-  btn3 = { (UChar *)(&P3IN), BIT0, EVENT_BTN3 },
-  btn4 = { (UChar *)(&P3IN), BIT1, EVENT_BTN4 },
-  btn5 = { (UChar *)(&P3IN), BIT2, EVENT_BTN5 },
-  btn6 = { (UChar *)(&P3IN), BIT3, EVENT_BTN6 };
+} TBtn;
+
+// --- Variable pro Button (RAM, ändert sich) ---
+LOCAL struct { Int cnt; TState state; } var1, var2;
+
+// --- Konstante pro Button (FRAM, fest) ---
+LOCAL const TBtn btn1 = { (UChar *)(&P1IN), BIT0, EVENT_BTN1 };
+LOCAL const TBtn btn2 = { (UChar *)(&P1IN), BIT1, EVENT_BTN2 };
+
+// --- 2 Pointer auf die Button-Konfigurationen ---
+LOCAL const TBtn * const p1 = &btn1;
+LOCAL const TBtn * const p2 = &btn2;
 
 // --- Entprell-Logik als Makro (wird zur Compile-Zeit expandiert) ---
 #define DEBOUNCE(b, v)                          \
@@ -115,12 +118,8 @@ __interrupt Void TIMER1_A1_ISR(Void) {
    CLRBIT(TA1CTL, TAIFG);
       UChar wake = 0;
 
-      DEBOUNCE(btn1, var1)
-      DEBOUNCE(btn2, var2)
-      DEBOUNCE(btn3, var3)
-      DEBOUNCE(btn4, var4)
-      DEBOUNCE(btn5, var5)
-      DEBOUNCE(btn6, var6)
+      DEBOUNCE(*p1, var1)
+      DEBOUNCE(*p2, var2)
 
       if (wake) {
          __low_power_mode_off_on_exit();
