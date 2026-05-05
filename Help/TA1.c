@@ -13,6 +13,32 @@
 #include "TA1.h"
 #include "event.h"
 
+// Taktquelle: ACLK = XT1 / 8 = 613,75 kHz
+// Zeitspanne = 3,3 ms
+// Teilungsfaktor = 613750 * 0,0033 = 2025,375
+// Skalierungsfaktor < 1 => {/1} {/1}
+// TA1CCR0 = 2025 - 1
+
+#define CNTMAX 6
+#define BTNCNT 2
+
+typedef enum { S0, S1 } TState;
+
+LOCAL struct {
+   Int    cnt;
+   TState state;
+} btn[BTNCNT];
+
+LOCAL const struct {
+   const UChar * const port;
+   const UChar  mask;
+   const TEvent msg;
+} cfg[BTNCNT] = {
+   { (UChar *)(&P1IN), BIT0, EVENT_BTN1 },
+   { (UChar *)(&P1IN), BIT1, EVENT_BTN2 }
+};
+
+LOCAL UInt i;
 
 /*
  * TA1_init - Initialisiert und startet Timer A1
@@ -27,66 +53,24 @@
  * Bei CCR0 = 0xFFFF und f_ACLK = 613.75 kHz: T ≈ 106.7 ms
  */
 
- #define CNTMAX 5
-
-typedef enum { S0, S1 } TState;
-
-// --- Struct-Typ für Button-Konfiguration ---
-typedef struct {
-   const UChar * const port;
-   const UChar         mask;
-   const TEvent        msg;
-} TBtn;
-
-// --- Variable pro Button (RAM, ändert sich) ---
-LOCAL struct { Int cnt; TState state; } var1, var2;
-
-// --- Konstante pro Button (FRAM, fest) ---
-LOCAL const TBtn btn1 = { (UChar *)(&P1IN), BIT0, EVENT_BTN1 };
-LOCAL const TBtn btn2 = { (UChar *)(&P1IN), BIT1, EVENT_BTN2 };
-
-// --- 2 Pointer auf die Button-Konfigurationen ---
-LOCAL const TBtn * const p1 = &btn1;
-LOCAL const TBtn * const p2 = &btn2;
-
-// --- Entprell-Logik als Makro (wird zur Compile-Zeit expandiert) ---
-#define DEBOUNCE(b, v)                          \
-   if (TSTBIT(*(b).port, (b).mask)) {           \
-      if (--(v).cnt LT 0) {                     \
-         (v).cnt   = 0;                         \
-         (v).state = S0;                        \
-      }                                         \
-   } else if (++(v).cnt GT CNTMAX-1) {          \
-      (v).cnt = CNTMAX-1;                       \
-      if ((v).state EQ S0) {                    \
-         (v).state = S1;                        \
-         Event_set((b).msg);                    \
-         wake = 1;                              \
-      }                                         \
-   }
-   
+#pragma FUNC_ALWAYS_INLINE(TA1_init)
 #pragma FUNC_ALWAYS_INLINE(TA1_init)
 GLOBAL Void TA1_init(Void) {
 
-   // Timer zunächst stoppen und alle Flags löschen
+
+   btn[0].cnt = -(CNTMAX-1); btn[0].state = S0;
+   btn[1].cnt = -(CNTMAX-1); btn[1].state = S0;
+   i = 0;
+
    TA1CTL   = 0;
-
-   // Compare/Capture Control Register 0 konfigurieren
-   TA1CCTL0 = 0;  // Kein Capture-Modus, Compare-Modus
-                  // Interrupt-Flag löschen und deaktivieren
-
-   // Compare Register setzen (bestimmt Zählperiode)
-   TA1CCR0  = 0xFFFF;          // Maximaler Wert (65535)
-
-   // Expansion Register (zusätzlicher Teiler)
-   TA1EX0   = TAIDEX_0;        // Teiler /1 (kein zusätzlicher Teiler)
-
-   // Timer Control Register - Timer starten
-   TA1CTL   = TASSEL__ACLK     // Taktquelle: ACLK (613.75 kHz)
-            | MC__UP           // Up Mode: Zählt von 0 bis CCR0
-            | ID__1            // Input Divider: /1
-            | TACLR            // Timer löschen und starten
-            | TAIE;            // Timer Interrupt aktivieren
+   TA1CCTL0 = 0;
+   TA1CCR0  = 2025-1;
+   TA1EX0   = TAIDEX_0;       // /1
+   TA1CTL   = TASSEL__ACLK
+            | MC__UP
+            | ID__1            // /1
+            | TACLR
+            | TAIE;
 }
 
 
@@ -115,14 +99,23 @@ __interrupt Void TIMER1_A1_ISR(Void) {
     * - Bei stabiler Änderung: Event_set(EVENT_BTN1/2) aufrufen
     */
 
-   CLRBIT(TA1CTL, TAIFG);
-      UChar wake = 0;
+   TA1IV;
 
-      DEBOUNCE(*p1, var1)
-      DEBOUNCE(*p2, var2)
+   if (TSTBIT(*cfg[i].port, cfg[i].mask)) {
+      btn[i].cnt   = 0;
+      btn[i].state = S0;
+   }
+   else {
+      if (++btn[i].cnt GT CNTMAX-1) {
+         btn[i].cnt = CNTMAX-1;
+         if (btn[i].state EQ S0) {
+            btn[i].state = S1;
+            Event_set(cfg[i].msg);
+            __low_power_mode_off_on_exit();
+         }
+      }
+   }
 
-      if (wake) {
-         __low_power_mode_off_on_exit();
-      }  
+   if (++i GE BTNCNT) { i = 0; }
 
 }
